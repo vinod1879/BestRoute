@@ -7,7 +7,48 @@
 //
 
 #import <UIKit/UIKit.h>
+#import <GoogleMaps/GoogleMaps.h>
+#import "BRActivityView.h"
 
-@interface BRViewController : UIViewController
+@interface coords:NSObject
+
+@property float lat;
+@property float lng;
+
+@end
+
+@interface BRViewController : UIViewController {
+    
+    int aMatrix[12][12];
+    int cMatrix[12][12];
+    NSMutableArray *coordArray;
+    GMSMapView *mapView;
+    BRActivityView *activityView;
+    
+    GMSPolyline *previousPath;
+    
+}
+
+@property IBOutlet UIPickerView *pickerView;
+
+-(IBAction)calculateRoute:(id)sender;
+
+typedef enum CityList {
+    Bangalore =0,
+    Hyderabad,
+    Chennai,
+    Vishakhapatnam,
+    Bhubaneswar,
+    Kolkata,
+    Nagpur,
+    Ranchi,
+    Rourkela,
+    Raipur,
+    Vijayawada
+} CityList;
+
+extern NSString * const FormatType_toString[];
+
+
 
 @end
