@@ -14,6 +14,7 @@
 
 @property float lat;
 @property float lng;
+@property NSString* encodedPath;
 
 @end
 
@@ -26,6 +27,7 @@
     BRActivityView *activityView;
     
     GMSPolyline *previousPath;
+    NSMutableDictionary *routePath;
     
 }
 

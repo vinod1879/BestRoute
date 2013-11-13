@@ -46,6 +46,7 @@ NSString * const FormatType_toString[] = {
 {
     [super viewDidLoad];
     
+    
     [GMSServices provideAPIKey:@"AIzaSyDjLz4bc9GfsJhn-JAkqVieKBozQvXiXCE"];
     [self initMap];
     
@@ -66,12 +67,11 @@ NSString * const FormatType_toString[] = {
     [self performSelectorInBackground:@selector(setCostMatrix) withObject:nil];
 }
 
-
 -(IBAction)calculateRoute:(id)sender
 {
     if([activityView isAnimating])
     {
-        [self showAlertWithTitle:@"" message:@"Please wait till initialization completes"];
+        [self showAlertWithTitle:@"" message:@"Please wait until initialization completes"];
         return;
     }
     
@@ -82,7 +82,7 @@ NSString * const FormatType_toString[] = {
     
     if(s != d) {
         
-        [self shortPathWithSource:s destination:d];
+        [self shortestPathWithSource:s destination:d];
     }
     else {
         
@@ -175,6 +175,9 @@ NSString * const FormatType_toString[] = {
     
     NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:responseData options:NSJSONReadingMutableContainers error:&error];
     
+    if(![[dict valueForKey:@"status"] isEqualToString:@"OK"])
+        return;
+        
     int distance = [[[[[[[dict objectForKey:@"routes"] objectAtIndex:0] objectForKey:@"legs"] objectAtIndex:0] objectForKey:@"distance"] objectForKey:@"value"] intValue];
     
     float oLat, oLng, dLat, dLng;
@@ -205,10 +208,30 @@ NSString * const FormatType_toString[] = {
     
     [coordArray replaceObjectAtIndex:source withObject:startCoord];
     [coordArray replaceObjectAtIndex:destination withObject:endCoord];
+    
+    NSString *overview = [[[[dict objectForKey:@"routes"] objectAtIndex:0] objectForKey:@"overview_polyline"] objectForKey:@"points"];
+    
+    [self savePathBetweenSource:source destination:destination pathStr:overview];
 }
 
+-(void)savePathBetweenSource:(CityList)source destination:(CityList)destination pathStr:(NSString*)str
+{
+    if(routePath == nil) {
+        
+        routePath = [[NSMutableDictionary alloc] init];
+    }
+    
+    [routePath setValue:str forKey:[self sortedKeyForSource:source destination:destination]];
+}
 
--(void)shortPathWithSource:(int)s destination:(int)t
+-(NSString*)retrievePathBetweenSource:(CityList)source destination:(CityList)destination
+{
+    NSString *path = [routePath valueForKey:[self sortedKeyForSource:source destination:destination]];
+    
+    return path;
+}
+
+-(void)shortestPathWithSource:(int)s destination:(int)t
 {
     int pd;
     int precede[MAXNODES];
@@ -266,17 +289,6 @@ NSString * const FormatType_toString[] = {
     NSLog(@"\n\nShortest Distance: %d", pd);
 }
 
--(void)initMap
-{
-    GMSCameraPosition *camera = [GMSCameraPosition cameraWithLatitude:20
-                                                            longitude:77
-                                                                 zoom:4];
-    
-    mapView = [GMSMapView mapWithFrame:CGRectMake(0, 250, 320, 250) camera:camera];
-    
-    [self.view addSubview:mapView];
-}
-
 -(void)plotMapWithArray:(NSArray*)array
 {
     if(previousPath != nil)
@@ -285,12 +297,29 @@ NSString * const FormatType_toString[] = {
     }
     
     GMSMutablePath *path = [GMSMutablePath path];
-    
+    /*
     for (NSNumber *num in array) {
         
         coords *current = [coordArray objectAtIndex:[num intValue]];
         [path addLatitude:current.lat longitude:current.lng];
         
+    }*/
+    
+    for(int i=0; i+1< [array count]; i++) {
+        
+        int s = [[array objectAtIndex:i] integerValue];
+        int d =[[array objectAtIndex:i+1] integerValue];
+        
+        NSString *encodedPath = [self retrievePathBetweenSource:s destination:d];
+        NSArray *pathArray = [self decodePoly:encodedPath];
+        
+        if(pathArray != nil) {
+            
+            for(coords *current in pathArray) {
+                
+                [path addLatitude:current.lat longitude:current.lng];
+            }
+        }
     }
     
     GMSPolyline *polyline = [GMSPolyline polylineWithPath:path];
@@ -341,6 +370,69 @@ NSString * const FormatType_toString[] = {
     UIAlertView *av = [[UIAlertView alloc] initWithTitle:title message:message delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil];
     
     [av show];
+}
+
+-(void)initMap
+{
+    GMSCameraPosition *camera = [GMSCameraPosition cameraWithLatitude:20
+                                                            longitude:77
+                                                                 zoom:4];
+    
+    mapView = [GMSMapView mapWithFrame:CGRectMake(0, 250, 320, 250) camera:camera];
+    
+    [self.view addSubview:mapView];
+}
+
+
+-(NSMutableArray*)decodePoly:(NSString*) encoded {
+    
+    NSMutableArray *poly = [[NSMutableArray alloc] init];
+    int index = 0, len = [encoded length];
+    int lat = 0, lng = 0;
+    
+    while (index < len) {
+        int b, shift = 0, result = 0;
+        do {
+            b = [encoded characterAtIndex:index++] - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
+        
+        shift = 0;
+        result = 0;
+        do {
+            b = [encoded characterAtIndex:index++] - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
+        
+        coords *temp = [[coords alloc] init];
+        
+        temp.lat = lat * 1e-5;
+        temp.lng = lng * 1e-5;
+        [poly addObject:temp];
+    }
+    
+    return poly;
+}
+
+-(NSString*)sortedKeyForSource:(CityList)source destination:(CityList)destination
+{
+    NSString *key;
+    
+    if(source < destination) {
+        
+        key = [NSString stringWithFormat:@"%d%d", source, destination];
+    }
+    else {
+        key = [NSString stringWithFormat:@"%d%d", destination, source];
+    }
+    
+    return key;
 }
 
 @end
